@@ -62,6 +62,9 @@ export async function thinkMausbot(cfg, payload, deps = {}) {
     if (res?.error === 'unavailable') {
       return notice('MausBot is unavailable right now. Try again shortly.');
     }
+    if (res?.error === 'cannot_confine') {
+      return notice('This MausBot AI cannot take Bot API calls. Ask the owner to mark the key as acting for them in MausBot.');
+    }
     if (res?.delivery === 'rejected') {
       return notice('MausBot rejected the message. Check MausBot for access or usage issues.');
     }

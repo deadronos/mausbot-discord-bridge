@@ -124,3 +124,9 @@ test('reports MausBot being unavailable', async () => {
   const result = await thinkMausbot(cfg, payload, d);
   assert.match(result.text, /unavailable|try again/i);
 });
+
+test('reports an unconfinable AI with the owner action needed', async () => {
+  const d = depsFor({ error: 'cannot_confine' });
+  const result = await thinkMausbot(cfg, payload, d);
+  assert.match(result.text, /acting for (you|them)|Acts as me/i);
+});
