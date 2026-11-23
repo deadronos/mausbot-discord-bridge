@@ -36,18 +36,18 @@ function depsFor(response, opts = {}) {
 }
 
 test('makeThreadKey maps a DM to the author', () => {
-  assert.equal(makeThreadKey({ isDM: true, authorId: 'A' }), 'dm:A');
+  assert.equal(makeThreadKey({ isDM: true, authorId: 'A' }), 'dm-A');
 });
 
 test('makeThreadKey maps a channel to the channel id', () => {
-  assert.equal(makeThreadKey({ isDM: false, channelId: 'C' }), 'chan:C');
+  assert.equal(makeThreadKey({ isDM: false, channelId: 'C' }), 'chan-C');
 });
 
 test('sends the thread key, text and payload to the request function', async () => {
   let captured;
   const d = depsFor(async (c, req) => { captured = req; return { delivery: 'accepted', reply: { type: 'text', content: 'ok' } }; });
   await thinkMausbot(cfg, payload, d);
-  assert.equal(captured.threadKey, 'chan:C');
+  assert.equal(captured.threadKey, 'chan-C');
   assert.equal(captured.text, payload.text);
   assert.equal(captured.payload, payload);
 });
@@ -111,4 +111,16 @@ test('never echoes secrets in any result', async () => {
     const result = await thinkMausbot(cfg, payload, depsFor(response));
     assert.doesNotMatch(JSON.stringify(result), /SECRET-KEY-XYZ/);
   }
+});
+
+test('reports rate limiting without claiming delivery', async () => {
+  const d = depsFor({ error: 'rate_limited' });
+  const result = await thinkMausbot(cfg, payload, d);
+  assert.equal(d.calls, 1);
+  assert.match(result.text, /rate limit/i);
+});
+test('reports MausBot being unavailable', async () => {
+  const d = depsFor({ error: 'unavailable' });
+  const result = await thinkMausbot(cfg, payload, d);
+  assert.match(result.text, /unavailable|try again/i);
 });

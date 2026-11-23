@@ -5,7 +5,8 @@
  */
 
 export function makeThreadKey(payload) {
-  return payload.isDM ? `dm:${payload.authorId}` : `chan:${payload.channelId}`;
+  // MausBot validates thread ids with /^[\w-]{1,128}$/ — a colon is not allowed.
+  return payload.isDM ? `dm-${payload.authorId}` : `chan-${payload.channelId}`;
 }
 
 function notice(text) {
@@ -54,6 +55,12 @@ export async function thinkMausbot(cfg, payload, deps = {}) {
     }
     if (res?.error === 'timeout') {
       return notice('MausBot did not answer in time. Check MausBot before trying again; the bridge will not resend.');
+    }
+    if (res?.error === 'rate_limited') {
+      return notice('MausBot is rate limiting requests. Try again shortly.');
+    }
+    if (res?.error === 'unavailable') {
+      return notice('MausBot is unavailable right now. Try again shortly.');
     }
     if (res?.delivery === 'rejected') {
       return notice('MausBot rejected the message. Check MausBot for access or usage issues.');
