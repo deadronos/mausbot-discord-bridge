@@ -40,6 +40,7 @@ export function loadConfig() {
   const guildAllow = splitCsv('DISCORD_GUILD_ALLOWLIST', { required: true });
   const channelAllow = splitCsv('DISCORD_CHANNEL_ALLOWLIST', { required: true });
   const authorAllow = splitCsv('DISCORD_AUTHOR_ALLOWLIST', { required: true });
+  const ownerId = env('DISCORD_OWNER_ID');
   const brainMode = (env('BRAIN_MODE') || 'openai_compat').trim();
   // Empty = DMs disabled (fail-closed).
   const dmAllow = splitCsv('DISCORD_DM_ALLOWLIST');
@@ -48,12 +49,12 @@ export function loadConfig() {
   }
   const peerMentionId = env('DISCORD_PEER_MENTION_ID');
   const webhookAsync = bool('WEBHOOK_ASYNC', false);
-  if (!peerMentionId && brainMode !== 'gbot' && !(brainMode === 'webhook' && webhookAsync)) {
+  if (!peerMentionId && brainMode !== 'gbot' && brainMode !== 'mausbot' && !(brainMode === 'webhook' && webhookAsync)) {
     throw new Error('DISCORD_PEER_MENTION_ID is required (e.g. Hermes/Maverick bot id)');
   }
 
-  if (!['openai_compat', 'webhook', 'log_only', 'gbot'].includes(brainMode)) {
-    throw new Error('BRAIN_MODE must be openai_compat | webhook | log_only | gbot');
+  if (!['openai_compat', 'webhook', 'log_only', 'gbot', 'mausbot'].includes(brainMode)) {
+    throw new Error('BRAIN_MODE must be openai_compat | webhook | log_only | gbot | mausbot');
   }
 
   const gbot = {
@@ -74,6 +75,27 @@ export function loadConfig() {
     if (int('MAX_INFLIGHT_PER_CHANNEL', 1) !== 1) throw new Error('gbot mode requires MAX_INFLIGHT_PER_CHANNEL=1');
   }
 
+  const mausbot = {
+    apiBase: env('MAUSBOT_API_BASE').replace(/\/$/, ''),
+    apiKey: env('MAUSBOT_API_KEY'),
+    actsAsMe: bool('MAUSBOT_ACTS_AS_ME', true),
+    timeoutMs: int('MAUSBOT_TIMEOUT_MS', 120000),
+    pollMs: int('MAUSBOT_POLL_MS', 2000),
+  };
+  if (brainMode === 'mausbot') {
+    if (!ownerId) throw new Error('DISCORD_OWNER_ID is required in mausbot mode');
+    if (!mausbot.apiKey) throw new Error('MAUSBOT_API_KEY is required in mausbot mode');
+    if (!mausbot.apiBase) throw new Error('MAUSBOT_API_BASE is required in mausbot mode');
+    if (authorAllow.length !== 1 || authorAllow[0] !== ownerId) {
+      throw new Error('DISCORD_AUTHOR_ALLOWLIST must contain exactly DISCORD_OWNER_ID in mausbot mode');
+    }
+    if (!Number.isInteger(mausbot.timeoutMs) || mausbot.timeoutMs < 1000 || mausbot.timeoutMs > 300000 ||
+        !Number.isInteger(mausbot.pollMs) || mausbot.pollMs < 250 || mausbot.pollMs > mausbot.timeoutMs) {
+      throw new Error('MAUSBOT timeout must be 1000–300000 ms; polling must be 250 ms or more and no longer than timeout');
+    }
+    if (int('MAX_INFLIGHT_PER_CHANNEL', 1) !== 1) throw new Error('mausbot mode requires MAX_INFLIGHT_PER_CHANNEL=1');
+  }
+
   const systemPromptFile = env('SYSTEM_PROMPT_FILE');
   let systemPrompt = env('SYSTEM_PROMPT');
   if (systemPromptFile) {
@@ -90,6 +112,7 @@ export function loadConfig() {
 
   return {
     token,
+    ownerId,
     guildAllow: new Set(guildAllow),
     channelAllow: new Set(channelAllow),
     authorAllow: new Set(authorAllow),
@@ -99,6 +122,7 @@ export function loadConfig() {
     wakeWords: splitCsv('WAKE_WORDS').map((w) => w.toLowerCase()),
     brainMode,
     gbot,
+    mausbot,
     openai: {
       baseUrl: (env('OPENAI_BASE_URL') || 'https://api.x.ai/v1').replace(/\/$/, ''),
       apiKey: env(providerKeyName),
