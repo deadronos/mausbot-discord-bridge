@@ -22,3 +22,29 @@ test('legacy backends retain their peer requirement',()=>{
  assert.throws(()=>config({BRAIN_MODE:'log_only'}),/DISCORD_PEER_MENTION_ID/);
  assert.equal(config({BRAIN_MODE:'log_only',DISCORD_PEER_MENTION_ID:'peer'}).brainMode,'log_only');
 });
+
+const mausbot={BRAIN_MODE:'mausbot',DISCORD_OWNER_ID:'owner-1',DISCORD_AUTHOR_ALLOWLIST:'owner-1',MAUSBOT_API_BASE:'https://maus.example/api',MAUSBOT_API_KEY:'maus-key-xyz'};
+test('mausbot mode is accepted with its api key',()=>{
+  const c=config(mausbot);
+  assert.equal(c.brainMode,'mausbot');
+  assert.equal(c.mausbot.apiKey,'maus-key-xyz');
+  assert.equal(c.mausbot.apiBase,'https://maus.example/api');
+});
+test('mausbot mode requires MAUSBOT_API_KEY',()=>{
+  const o={...mausbot};delete o.MAUSBOT_API_KEY;
+  assert.throws(()=>config(o),/MAUSBOT_API_KEY/);
+});
+test('mausbot mode requires DISCORD_OWNER_ID',()=>{
+  const o={...mausbot};delete o.DISCORD_OWNER_ID;
+  assert.throws(()=>config(o),/DISCORD_OWNER_ID/);
+});
+test('mausbot mode requires exactly the owner in the author allowlist',()=>{
+  assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'owner-1,other'}),/DISCORD_AUTHOR_ALLOWLIST/);
+  assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'other'}),/DISCORD_AUTHOR_ALLOWLIST/);
+});
+test('mausbot mode does not require DISCORD_PEER_MENTION_ID',()=>{
+  assert.equal(config(mausbot).brainMode,'mausbot');
+});
+test('mausbot mode supports a DM allowlist',()=>{
+  assert.equal(config({...mausbot,DISCORD_DM_ALLOWLIST:'owner-1'}).dmAllow.has('owner-1'),true);
+});
