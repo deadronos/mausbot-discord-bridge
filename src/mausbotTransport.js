@@ -72,6 +72,7 @@ export async function mausbotRequest(cfg, req, deps = {}) {
   if (res.status === 401) return { error: 'unauthorized' };
   if (res.status === 403) {
     const msg = String(data.error || '');
+    if (/can't take Bot API calls/i.test(msg)) return { error: 'cannot_confine' };
     return /act as (the )?owner|no longer acts as the owner|can't act/i.test(msg)
       ? { error: 'acts_as_me_unavailable' }
       : { error: 'unauthorized' };

@@ -110,3 +110,9 @@ test('never logs the key', async () => {
   }
   assert.doesNotMatch(lines.join('\n'), /SECRET-KEY-XYZ/);
 });
+
+test('maps an unconfinable AI refusal to cannot_confine', async () => {
+  const fetch = stubFetch(403, { error: "This bot's AI can't take Bot API calls. Choose another AI for this bot." });
+  const res = await mausbotRequest(cfg, sendReq, harness(fetch));
+  assert.deepEqual(res, { error: 'cannot_confine' });
+});
