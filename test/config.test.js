@@ -67,6 +67,8 @@ test('send API port is bounded and secret is optional',()=>{
   assert.equal(config({...mausbot,SEND_API_PORT:'9000',MAUSBOT_SEND_API_SECRET:'s'}).sendApi.port,9000);
   assert.throws(()=>config({...mausbot,SEND_API_PORT:'80',MAUSBOT_SEND_API_SECRET:'s'}),/SEND_API_PORT/);
 });
-test('mausbot mode supports a DM allowlist',()=>{
+test('mausbot mode supports a DM allowlist limited to owner',()=>{
   assert.equal(config({...mausbot,DISCORD_DM_ALLOWLIST:'owner-1'}).dmAllow.has('owner-1'),true);
+  assert.throws(()=>config({...mausbot,DISCORD_DM_ALLOWLIST:'owner-1,stranger'}),/DISCORD_DM_ALLOWLIST/);
+  assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'owner-1,peer-1',DISCORD_PEER_AUTHOR_ALLOWLIST:'peer-1',DISCORD_DM_ALLOWLIST:'peer-1'}),/DISCORD_DM_ALLOWLIST/);
 });

@@ -27,7 +27,7 @@ import { loadConfig } from './config.js';
 import { think } from './brain.js';
 import { splitMessage } from './splitMessage.js';
 import { RateLimiter } from './rateLimit.js';
-import { isAllowedInGuild, formatReplyText } from './handlerPure.js';
+import { isAllowedInGuild, formatReplyText, neutralizeMentions } from './handlerPure.js';
 import { isAllowedDm } from './dm.js';
 import { startTypingPulse } from './typing.js';
 import { watchLateReply } from './lateReply.js';
@@ -84,7 +84,7 @@ async function sendSplitReply(message, fullText, handoff = true) {
   // Keep allowlisted pings intact; neutralize every other raw user mention.
   const allow = cfg.mentionAllow || new Set();
   if (!handoff) {
-    fullText = fullText.replace(/<@!?(\d+)>/g, (whole, id) => (allow.has(id) ? `<@${id}>` : `@user:${id}`));
+    fullText = neutralizeMentions(fullText, allow);
   }
   const chunks = splitMessage(fullText, 1900);
   const users = handoff ? [cfg.peerMentionId].filter(Boolean) : [...allow];
@@ -95,8 +95,12 @@ async function sendSplitReply(message, fullText, handoff = true) {
       repliedUser: false,
     },
   };
-  // First chunk as reply; rest as follow-ups in-channel
-  await message.reply({ content: chunks[0], ...opts });
+  // First chunk as reply (fall back to channel.send if the original message was deleted); rest as follow-ups.
+  try {
+    await message.reply({ content: chunks[0], ...opts });
+  } catch {
+    await message.channel.send({ content: chunks[0], ...opts });
+  }
   for (let i = 1; i < chunks.length; i++) {
     await message.channel.send({ content: chunks[i], ...opts });
   }
@@ -153,8 +157,11 @@ client.on(Events.MessageCreate, async (message) => {
       }
       // A group DM also has no guild. Without this check, private replies could
       // leak to anyone else in the group as long as one author was allowlisted.
-      if (!isAllowedDm(message.channel, cfg.dmAllow)) {
-        log('debug', 'drop non-1:1 DM channel', { author: message.author.id, channelType: message.channel?.type });
+      const dmChannel = message.channel?.partial && typeof message.channel.fetch === 'function'
+        ? await message.channel.fetch().catch(() => null)
+        : message.channel;
+      if (!isAllowedDm(dmChannel, cfg.dmAllow, client.user.id)) {
+        log('debug', 'drop non-1:1 DM channel', { author: message.author.id, channelType: dmChannel?.type });
         return;
       }
     } else {
@@ -239,13 +246,25 @@ client.on(Events.MessageCreate, async (message) => {
     await sendSplitReply(message, reply, result.handoff !== false);
 
     if (result.pending) {
-      watchLateReply(cfg, {
+      const heldChannel = acquiredChannel;
+      const releaseSlot = () => {
+        if (!heldChannel) return;
+        const n = inflight.get(heldChannel) || 1;
+        inflight.set(heldChannel, Math.max(0, n - 1));
+      };
+      const watching = watchLateReply(cfg, {
         threadKey: result.threadKey,
         requestId: result.requestId,
         format: (content) => formatReplyText({ text: content, handoff: false }, cfg),
         send: (text) => sendSplitReply(message, text, false),
         log,
+        onFinish: releaseSlot,
       });
+      if (watching) {
+        // Keep the channel busy until the background watcher finishes so a new
+        // message cannot POST concurrently to the same MausBot thread.
+        acquiredChannel = null;
+      }
     }
   } catch (err) {
     log('error', 'handler failed', { messageId: message.id, type: err?.name || 'Error' });

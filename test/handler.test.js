@@ -4,16 +4,16 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {RateLimiter} from '../src/rateLimit.js';
 import {splitMessage} from '../src/splitMessage.js';
-import {isAllowedInGuild, formatReplyText} from '../src/handlerPure.js';
+import {isAllowedInGuild, formatReplyText, neutralizeMentions} from '../src/handlerPure.js';
 import {isAllowedDm} from '../src/dm.js';
 // Exercise the actual entrypoint with no Discord socket or environment credentials.
 const code=fs.readFileSync(new URL('../src/index.js',import.meta.url),'utf8').replace(/^#!.*\n/,'').replace(/^import[\s\S]*?from '[^']+';\n/gm,'');
-function setup(overrides={}) {
+function setup(overrides={}, hookOverrides={}) {
  const cfg={token:'mock',guildAllow:new Set(['g']),channelAllow:new Set(['c']),authorAllow:new Set(['human','peer']),peerMentionId:'peer',requireBotMention:true,wakeWords:[],rateLimitPerUser:100,rateLimitWindowMs:60000,dedupeTtlSeconds:600,maxInflightPerChannel:1,logLevel:'error',...overrides};
  const handlers={},pending=[],calls=[],replies=[];
  let typingStopped=0;
  class Client {constructor(){this.user={id:'self'};}once(){}on(e,f){handlers[e]=f;}login(){return Promise.resolve();}destroy(){}}
- vm.runInNewContext(code,{Client,GatewayIntentBits:{},Partials:{},Events:{MessageCreate:'msg'},loadConfig:()=>cfg,think:(_cfg,payload)=>{calls.push(payload);return new Promise((resolve,reject)=>pending.push({resolve,reject}));},splitMessage,RateLimiter,isAllowedInGuild,formatReplyText,isAllowedDm,startTypingPulse:()=>()=>{typingStopped+=1;},watchLateReply:()=>false,createSendApi:()=>null,console:{error(){},warn(){},info(){},log(){}},process:{on(){},exit(){}}});
+ vm.runInNewContext(code,{Client,GatewayIntentBits:{},Partials:{},Events:{MessageCreate:'msg'},loadConfig:()=>cfg,think:(_cfg,payload)=>{calls.push(payload);return new Promise((resolve,reject)=>pending.push({resolve,reject}));},splitMessage,RateLimiter,isAllowedInGuild,formatReplyText,neutralizeMentions,isAllowedDm,startTypingPulse:()=>()=>{typingStopped+=1;},watchLateReply:hookOverrides.watchLateReply||(()=>false),createSendApi:()=>null,console:{error(){},warn(){},info(){},log(){}},process:{on(){},exit(){}}});
  let id=0;
  return {calls,replies,pending,get typingStopped(){return typingStopped;},raw:(m)=>handlers.msg(m),send: (author='human',content='<@self> hello',messageId)=>handlers.msg({id:messageId||String(++id),guild:{id:'g'},author:{id:author,tag:author,bot:author==='peer'},content,mentions:{users:new Set(content.includes('<@self>')?['self']:[])},channel:{id:'c',sendTyping:async()=>{},send:async o=>replies.push(o)},reply:async o=>replies.push(o)})};
 }
@@ -127,4 +127,64 @@ test('long reply is split into ordered complete chunks', () => {
   const chunks = splitMessage(long, 1900);
   assert.equal(chunks.length, 3);
   assert.equal(chunks.join(''), long);
+});
+
+test('accepts real discord.js v14 DMChannel shape and fetches partial DM channels', async () => {
+  const s = setup({ dmAllow: new Set(['human']) });
+  const fetchedChannel = {
+    id: 'dm-v14',
+    type: 1,
+    partial: false,
+    recipientIds: ['self', 'human'],
+    recipient: { id: 'human', bot: false },
+    sendTyping: async () => {},
+    send: async (o) => s.replies.push(o),
+  };
+  let fetched = 0;
+  const p = s.raw({
+    id: 'dm-partial-1',
+    guild: null,
+    author: { id: 'human', tag: 'human', bot: false },
+    content: 'hi from real dm',
+    mentions: { users: new Set() },
+    channel: {
+      id: 'dm-v14',
+      type: 1,
+      partial: true,
+      fetch: async () => { fetched += 1; return fetchedChannel; },
+      sendTyping: async () => {},
+      send: async (o) => s.replies.push(o),
+    },
+    reply: async (o) => s.replies.push(o),
+    react: async () => {},
+  });
+  await tick();
+  assert.equal(fetched, 1);
+  assert.equal(s.calls.length, 1);
+  s.pending[0].resolve({ text: 'ok', handoff: false });
+  await p;
+});
+
+test('late-reply watcher holds the channel inflight slot until onFinish runs', async () => {
+  let finishWatcher;
+  const s = setup({}, {
+    watchLateReply: (_cfg, ctx) => { finishWatcher = ctx.onFinish; return true; },
+  });
+  const first = s.send('human', '<@self> slow task', 'm1');
+  await tick();
+  s.pending[0].resolve({ text: 'Still working', handoff: false, pending: true, requestId: 't1', threadKey: 'chan-c' });
+  await first;
+
+  // Channel must still be busy while watcher is active.
+  await s.send('human', '<@self> another', 'm2');
+  assert.equal(s.calls.length, 1);
+  assert.match(s.replies[s.replies.length - 1].content, /not sent/);
+
+  // Once watcher finishes, the slot is released.
+  finishWatcher();
+  const second = s.send('human', '<@self> next', 'm3');
+  await tick();
+  assert.equal(s.calls.length, 2);
+  s.pending[1].resolve({ text: 'done', handoff: false });
+  await second;
 });

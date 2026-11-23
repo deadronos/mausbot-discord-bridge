@@ -117,6 +117,10 @@ export function loadConfig() {
     if (untrusted.length) {
       throw new Error('DISCORD_AUTHOR_ALLOWLIST contains ids outside DISCORD_OWNER_ID and DISCORD_PEER_AUTHOR_ALLOWLIST');
     }
+    const invalidDm = dmAllow.filter((id) => id !== ownerId);
+    if (invalidDm.length) {
+      throw new Error('DISCORD_DM_ALLOWLIST may only contain DISCORD_OWNER_ID in mausbot mode');
+    }
     if (!Number.isInteger(mausbot.timeoutMs) || mausbot.timeoutMs < 1000 || mausbot.timeoutMs > 300000 ||
         !Number.isInteger(mausbot.pollMs) || mausbot.pollMs < 250 || mausbot.pollMs > mausbot.timeoutMs) {
       throw new Error('MAUSBOT timeout must be 1000–300000 ms; polling must be 250 ms or more and no longer than timeout');

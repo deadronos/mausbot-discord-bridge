@@ -116,6 +116,13 @@ test('never echoes secrets in any result', async () => {
   }
 });
 
+test('reports busy thread without claiming delivery', async () => {
+  const d = depsFor({ error: 'busy' });
+  const result = await thinkMausbot(cfg, payload, d);
+  assert.equal(d.calls, 1);
+  assert.match(result.text, /busy/i);
+});
+
 test('reports rate limiting without claiming delivery', async () => {
   const d = depsFor({ error: 'rate_limited' });
   const result = await thinkMausbot(cfg, payload, d);
