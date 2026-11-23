@@ -1,1 +1,4 @@
+node_modules/
 threads.json
+.env
+secrets.env
