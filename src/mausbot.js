@@ -90,5 +90,16 @@ export async function thinkMausbot(cfg, payload, deps = {}) {
     await sleep(Math.min(pollMs, Math.max(0, deadline - now())));
   }
 
-  return notice('MausBot accepted the message, but no reply arrived within the bridge wait window. Work may still be running. Check MausBot; do not resend.');
+  if (!requestId) {
+    return notice('MausBot accepted the message, but the bridge could not read its reply. Check MausBot; do not resend.');
+  }
+  // The turn may still finish after the bridge deadline. Hand the thread id to
+  // the caller so it can keep polling and post the real reply when it arrives.
+  return {
+    text: 'Still working — I’ll post the result here when it arrives.',
+    handoff: false,
+    pending: true,
+    requestId,
+    threadKey,
+  };
 }

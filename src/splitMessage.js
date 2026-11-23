@@ -1,4 +1,4 @@
-/** Split long Discord messages near the hard limit without breaking mid-code-fence naively. */
+/** Split long Discord messages at a newline near the hard limit. */
 
 const DISCORD_SAFE = 1900;
 

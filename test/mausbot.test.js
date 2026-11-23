@@ -81,15 +81,18 @@ test('never retries unconfirmed delivery', async () => {
   assert.match(result.text, /check MausBot|do not resend/i);
 });
 
-test('reports timeout when no correlated reply arrives', async () => {
+test('hands a pending thread to the caller when no reply arrives in time', async () => {
   let t = 0;
   const d = depsFor({ delivery: 'accepted', requestId: 'r1', reply: null }, {
     now: () => t,
     sleep: async () => { t += 100; },
   });
   const result = await thinkMausbot(cfg, payload, d);
-  assert.match(result.text, /no reply/i);
+  assert.match(result.text, /still working/i);
   assert.equal(result.handoff, false);
+  assert.equal(result.pending, true);
+  assert.equal(result.requestId, 'r1');
+  assert.equal(result.threadKey, 'chan-C');
 });
 
 test('reports needs-approval instead of approving', async () => {

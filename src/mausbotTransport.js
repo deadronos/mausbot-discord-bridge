@@ -7,6 +7,38 @@ import fs from 'node:fs';
 
 const DEFAULT_THREAD_FILE = './threads.json';
 
+/** Discord ids are numeric snowflakes. Reject anything else so the stamp cannot be forged. */
+function cleanId(value) {
+  const s = String(value ?? '');
+  return /^\d{1,25}$/.test(s) ? s : 'unknown';
+}
+
+/** Keep the stamp on one line and free of characters that could fake a mention or a new line. */
+function cleanTag(value, fallback) {
+  const s = String(value ?? '')
+    .replace(/[^A-Za-z0-9#._ -]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  return s || fallback;
+}
+
+/**
+ * Keep the Discord author attached to the text. The Bot API key is marked as
+ * acting for the owner, so without this the brain cannot tell a peer bot's
+ * request from the owner's own and cannot apply the owner-only trust boundary.
+ * Every field is sanitized: this is trusted metadata, so it must not be able to
+ * inject a newline, a fake <@id> mention or a second fake stamp.
+ */
+function withAuthor(text, payload) {
+  if (!payload || !payload.authorId) return text;
+  const id = cleanId(payload.authorId);
+  const tag = cleanTag(payload.authorTag, id);
+  const kind = payload.isBot ? 'peer bot' : 'human';
+  const where = payload.isDM ? 'DM' : `channel ${cleanId(payload.channelId)}`;
+  return `[Discord from ${tag} (id=${id}, ${kind}, ${where})]\n${text}`;
+}
+
 /** One store per process, so concurrent DM/channel calls cannot overwrite each other's thread ids. */
 const sharedStores = new Map();
 export function getSharedThreadStore(file = process.env.MAUSBOT_THREAD_FILE || DEFAULT_THREAD_FILE) {
@@ -57,7 +89,7 @@ export async function mausbotRequest(cfg, req, deps = {}) {
     url = `${url}?thread=${encodeURIComponent(req.requestId || '')}`;
     opts = { method: 'GET', headers, signal: AbortSignal.timeout(bot.timeoutMs || 120_000) };
   } else {
-    const body = { message: req.text, wait: waitSeconds(bot.timeoutMs) };
+    const body = { message: withAuthor(req.text, req.payload), wait: waitSeconds(bot.timeoutMs) };
     const known = threads.get(req.threadKey);
     if (known) body.thread = known;
     opts = {
@@ -71,8 +103,11 @@ export async function mausbotRequest(cfg, req, deps = {}) {
   let res;
   try {
     res = await fetchFn(url, opts);
-  } catch {
-    return { error: 'timeout' };
+  } catch (err) {
+    // An aborted request is a timeout; DNS/TLS/connection failures are not.
+    return err?.name === 'AbortError' || err?.name === 'TimeoutError'
+      ? { error: 'timeout' }
+      : { error: 'unavailable' };
   }
   let data = {};
   try {

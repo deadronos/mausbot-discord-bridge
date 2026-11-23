@@ -48,6 +48,17 @@ export function loadConfig() {
     throw new Error('DISCORD_DM_ALLOWLIST is not supported in gbot mode');
   }
   const peerMentionId = env('DISCORD_PEER_MENTION_ID');
+  // Peer bots allowed to receive real Discord pings from MausBot replies.
+  // Empty = no MausBot reply can ping anyone (previous fail-closed behaviour).
+  const mentionAllow = splitCsv('DISCORD_MENTION_ALLOWLIST');
+  // Named peer bots that may wake the bridge, in addition to the owner.
+  // The owner remains the sole trust boundary for consequential actions.
+  const peerAuthorAllow = splitCsv('DISCORD_PEER_AUTHOR_ALLOWLIST');
+  // Discord shows the typing state for only a few seconds; refresh a long turn.
+  const typingPulseMs = int('TYPING_PULSE_MS', 5000);
+  if (typingPulseMs < 1000 || typingPulseMs > 15000) {
+    throw new Error('TYPING_PULSE_MS must be between 1000 and 15000');
+  }
   const webhookAsync = bool('WEBHOOK_ASYNC', false);
   if (!peerMentionId && brainMode !== 'gbot' && brainMode !== 'mausbot' && !(brainMode === 'webhook' && webhookAsync)) {
     throw new Error('DISCORD_PEER_MENTION_ID is required (e.g. Hermes/Maverick bot id)');
@@ -81,13 +92,23 @@ export function loadConfig() {
     actsAsMe: bool('MAUSBOT_ACTS_AS_ME', true),
     timeoutMs: int('MAUSBOT_TIMEOUT_MS', 120000),
     pollMs: int('MAUSBOT_POLL_MS', 2000),
+    // How long to keep polling for a reply after the foreground wait window ends.
+    lateReplyTimeoutMs: int('MAUSBOT_LATE_REPLY_MS', 900000),
   };
+  if (mausbot.lateReplyTimeoutMs < 60000 || mausbot.lateReplyTimeoutMs > 3600000) {
+    throw new Error('MAUSBOT_LATE_REPLY_MS must be between 60000 and 3600000');
+  }
   if (brainMode === 'mausbot') {
     if (!ownerId) throw new Error('DISCORD_OWNER_ID is required in mausbot mode');
     if (!mausbot.apiKey) throw new Error('MAUSBOT_API_KEY is required in mausbot mode');
     if (!mausbot.apiBase) throw new Error('MAUSBOT_API_BASE is required in mausbot mode');
-    if (authorAllow.length !== 1 || authorAllow[0] !== ownerId) {
-      throw new Error('DISCORD_AUTHOR_ALLOWLIST must contain exactly DISCORD_OWNER_ID in mausbot mode');
+    if (!authorAllow.includes(ownerId)) {
+      throw new Error('DISCORD_AUTHOR_ALLOWLIST must contain DISCORD_OWNER_ID in mausbot mode');
+    }
+    const trusted = new Set([ownerId, ...peerAuthorAllow]);
+    const untrusted = authorAllow.filter((id) => !trusted.has(id));
+    if (untrusted.length) {
+      throw new Error('DISCORD_AUTHOR_ALLOWLIST contains ids outside DISCORD_OWNER_ID and DISCORD_PEER_AUTHOR_ALLOWLIST');
     }
     if (!Number.isInteger(mausbot.timeoutMs) || mausbot.timeoutMs < 1000 || mausbot.timeoutMs > 300000 ||
         !Number.isInteger(mausbot.pollMs) || mausbot.pollMs < 250 || mausbot.pollMs > mausbot.timeoutMs) {
@@ -118,6 +139,9 @@ export function loadConfig() {
     authorAllow: new Set(authorAllow),
     dmAllow: new Set(dmAllow),
     peerMentionId,
+    mentionAllow: new Set(mentionAllow),
+    peerAuthorAllow: new Set(peerAuthorAllow),
+    typingPulseMs,
     requireBotMention: bool('REQUIRE_BOT_MENTION', true),
     wakeWords: splitCsv('WAKE_WORDS').map((w) => w.toLowerCase()),
     brainMode,
