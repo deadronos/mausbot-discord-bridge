@@ -221,7 +221,7 @@ client.on(Events.MessageCreate, async (message) => {
     log('error', 'handler failed', { messageId: message.id, type: err?.name || 'Error' });
     try {
       await message.reply({
-        content: 'The bridge could not finish this reply. Check the bridge host and Grok Bot conversation before resending.',
+        content: 'The bridge could not finish this reply. Check the bridge host and MausBot conversation before resending.',
         allowedMentions: { parse: [], repliedUser: false },
       });
     } catch {
