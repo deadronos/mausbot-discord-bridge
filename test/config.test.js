@@ -61,6 +61,12 @@ test('late reply window is bounded',()=>{
   assert.equal(config({...mausbot,MAUSBOT_LATE_REPLY_MS:'60000'}).mausbot.lateReplyTimeoutMs,60000);
   assert.throws(()=>config({...mausbot,MAUSBOT_LATE_REPLY_MS:'1000'}),/MAUSBOT_LATE_REPLY_MS/);
 });
+test('send API port is bounded and secret is optional',()=>{
+  assert.equal(config(mausbot).sendApi.port,8812);
+  assert.equal(config(mausbot).sendApi.secret,'');
+  assert.equal(config({...mausbot,SEND_API_PORT:'9000',MAUSBOT_SEND_API_SECRET:'s'}).sendApi.port,9000);
+  assert.throws(()=>config({...mausbot,SEND_API_PORT:'80',MAUSBOT_SEND_API_SECRET:'s'}),/SEND_API_PORT/);
+});
 test('mausbot mode supports a DM allowlist',()=>{
   assert.equal(config({...mausbot,DISCORD_DM_ALLOWLIST:'owner-1'}).dmAllow.has('owner-1'),true);
 });

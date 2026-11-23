@@ -21,11 +21,12 @@ Also mark the key as **acting for you** ("Acts as me"). If this install will not
 
 ## 3. Keychain
 
-Add the two secrets. These commands prompt for the value, so nothing lands in shell history or chat:
+Add the secrets. These commands prompt for the value, so nothing lands in shell history or chat:
 
 ```bash
 security add-generic-password -a DISCORD_BOT_TOKEN -s mausbot-discord-bridge -w
 security add-generic-password -a MAUSBOT_API_KEY -s mausbot-discord-bridge -w
+security add-generic-password -a MAUSBOT_SEND_API_SECRET -s mausbot-discord-bridge -w  # optional; enables the send API
 ```
 
 Verify the bridge can read them without printing them:
@@ -43,6 +44,19 @@ launchctl enable gui/$(id -u)/com.mausbot.discord-bridge
 ```
 
 If you upgrade Node, update the `PATH` in the plist to include the new node `bin` directory, then bootout and bootstrap again.
+
+### 4b. Loopback send API (optional)
+
+The bridge keeps owning the Discord token. When `MAUSBOT_SEND_API_SECRET` is in Keychain it also starts a small HTTP listener on `127.0.0.1` (`SEND_API_PORT`, default 8812) so the local MausBot can ask it to post a message. It is not reachable from outside this Mac. Callers need the separate send secret, and targets are restricted to `DISCORD_CHANNEL_ALLOWLIST` for channels or `DISCORD_DM_ALLOWLIST` for DMs; every other target is refused. Mentions in sent text are scoped to `DISCORD_MENTION_ALLOWLIST` and `@everyone`/roles are blocked.
+
+Use the helper so the secret never appears in chat or logs:
+
+```bash
+DISCORD_CHANNEL=1466587026097836271 DISCORD_TEXT='hello' bash ~/mausbot-discord-bridge/scripts/discord-send.sh
+DISCORD_USER=278962007577722880       DISCORD_TEXT='hello dm' bash ~/mausbot-discord-bridge/scripts/discord-send.sh
+```
+
+If the secret is absent, the endpoint is simply not started and the rest of the bridge behaves as before.
 
 ## 5. Smoke tests
 

@@ -13,7 +13,7 @@ function setup(overrides={}) {
  const handlers={},pending=[],calls=[],replies=[];
  let typingStopped=0;
  class Client {constructor(){this.user={id:'self'};}once(){}on(e,f){handlers[e]=f;}login(){return Promise.resolve();}destroy(){}}
- vm.runInNewContext(code,{Client,GatewayIntentBits:{},Partials:{},Events:{MessageCreate:'msg'},loadConfig:()=>cfg,think:(_cfg,payload)=>{calls.push(payload);return new Promise((resolve,reject)=>pending.push({resolve,reject}));},splitMessage,RateLimiter,isAllowedInGuild,formatReplyText,isAllowedDm,startTypingPulse:()=>()=>{typingStopped+=1;},watchLateReply:()=>false,console:{error(){},warn(){},info(){},log(){}},process:{on(){},exit(){}}});
+ vm.runInNewContext(code,{Client,GatewayIntentBits:{},Partials:{},Events:{MessageCreate:'msg'},loadConfig:()=>cfg,think:(_cfg,payload)=>{calls.push(payload);return new Promise((resolve,reject)=>pending.push({resolve,reject}));},splitMessage,RateLimiter,isAllowedInGuild,formatReplyText,isAllowedDm,startTypingPulse:()=>()=>{typingStopped+=1;},watchLateReply:()=>false,createSendApi:()=>null,console:{error(){},warn(){},info(){},log(){}},process:{on(){},exit(){}}});
  let id=0;
  return {calls,replies,pending,get typingStopped(){return typingStopped;},raw:(m)=>handlers.msg(m),send: (author='human',content='<@self> hello',messageId)=>handlers.msg({id:messageId||String(++id),guild:{id:'g'},author:{id:author,tag:author,bot:author==='peer'},content,mentions:{users:new Set(content.includes('<@self>')?['self']:[])},channel:{id:'c',sendTyping:async()=>{},send:async o=>replies.push(o)},reply:async o=>replies.push(o)})};
 }

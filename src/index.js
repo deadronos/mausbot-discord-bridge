@@ -31,6 +31,7 @@ import { isAllowedInGuild, formatReplyText } from './handlerPure.js';
 import { isAllowedDm } from './dm.js';
 import { startTypingPulse } from './typing.js';
 import { watchLateReply } from './lateReply.js';
+import { createSendApi } from './sendApi.js';
 
 const cfg = loadConfig();
 const limiter = new RateLimiter(cfg.rateLimitPerUser, cfg.rateLimitWindowMs);
@@ -101,6 +102,8 @@ async function sendSplitReply(message, fullText, handoff = true) {
   }
 }
 
+let sendServer; // loopback send API, owned by the bridge
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -122,6 +125,7 @@ client.once(Events.ClientReady, (c) => {
     requireBotMention: cfg.requireBotMention,
     brainMode: cfg.brainMode,
   });
+  sendServer = createSendApi(cfg, client, log);
 });
 
 // Connection health logging so outages are visible in bridge.log.
@@ -270,6 +274,7 @@ client.login(cfg.token).catch((err) => {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     log('info', `shutdown ${sig}`);
+    if (sendServer) sendServer.close();
     client.destroy();
     process.exit(0);
   });

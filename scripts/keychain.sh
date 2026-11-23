@@ -9,6 +9,9 @@ DISCORD_BOT_TOKEN="$(read_secret DISCORD_BOT_TOKEN)"
 export DISCORD_BOT_TOKEN
 MAUSBOT_API_KEY="$(read_secret MAUSBOT_API_KEY)"
 export MAUSBOT_API_KEY
+# Optional: secret for the loopback send API. Missing means the endpoint stays off.
+MAUSBOT_SEND_API_SECRET="$(read_secret MAUSBOT_SEND_API_SECRET)"
+export MAUSBOT_SEND_API_SECRET
 
 if [ -z "$DISCORD_BOT_TOKEN" ] || [ -z "$MAUSBOT_API_KEY" ]; then
   echo "Bridge secrets are missing from the Keychain." >&2
