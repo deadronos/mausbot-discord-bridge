@@ -124,6 +124,7 @@ export async function mausbotRequest(cfg, req, deps = {}) {
       ? { error: 'acts_as_me_unavailable' }
       : { error: 'unauthorized' };
   }
+  if (res.status === 409) return { error: 'busy' };
   if (res.status === 429) return { error: 'rate_limited' };
   if (res.status >= 500) return { error: 'unavailable' };
   if (res.status !== 200 && res.status !== 202) return { delivery: 'unconfirmed' };

@@ -116,6 +116,12 @@ test('maps 202 working so the adapter keeps polling', async () => {
   assert.equal(res.reply, undefined);
 });
 
+test('maps 409 to busy', async () => {
+  const fetch = stubFetch(409, { error: 'Thread busy' });
+  const res = await mausbotRequest(cfg, sendReq, harness(fetch));
+  assert.deepEqual(res, { error: 'busy' });
+});
+
 test('maps 401 to unauthorized', async () => {
   const fetch = stubFetch(401, { error: 'Invalid key' });
   const res = await mausbotRequest(cfg, sendReq, harness(fetch));

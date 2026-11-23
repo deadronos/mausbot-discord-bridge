@@ -56,6 +56,9 @@ export async function thinkMausbot(cfg, payload, deps = {}) {
     if (res?.error === 'timeout') {
       return notice('MausBot did not answer in time. Check MausBot before trying again; the bridge will not resend.');
     }
+    if (res?.error === 'busy') {
+      return notice('MausBot is still busy on this thread. Wait for the current turn to finish before sending again.');
+    }
     if (res?.error === 'rate_limited') {
       return notice('MausBot is rate limiting requests. Try again shortly.');
     }

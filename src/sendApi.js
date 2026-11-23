@@ -1,6 +1,8 @@
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { splitMessage } from './splitMessage.js';
+import { neutralizeMentions } from './handlerPure.js';
+import { RateLimiter } from './rateLimit.js';
 
 function safeEqual(a, b) {
   const A = Buffer.from(String(a));
@@ -10,15 +12,19 @@ function safeEqual(a, b) {
 
 function readBody(req, maxBytes = 20000) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
+    let totalBytes = 0;
     req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > maxBytes) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
         reject(new Error('body too large'));
         req.destroy();
+        return;
       }
+      chunks.push(buf);
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }
@@ -33,10 +39,13 @@ export function createSendApi(cfg, client, log = () => {}) {
   const secret = cfg.sendApi?.secret;
   if (!secret) return null;
 
+  const guilds = new Set(cfg.guildAllow || []);
   const channels = new Set(cfg.channelAllow || []);
   const dmUsers = new Set(cfg.dmAllow || []);
-  const mentionUsers = [...(cfg.mentionAllow || [])];
+  const mentionAllow = cfg.mentionAllow || new Set();
+  const mentionUsers = [...mentionAllow];
   const port = cfg.sendApi.port;
+  const limiter = new RateLimiter(cfg.rateLimitPerUser || 8, cfg.rateLimitWindowMs || 60000);
 
   const server = http.createServer(async (req, res) => {
     const fail = (code, error) => {
@@ -47,6 +56,8 @@ export function createSendApi(cfg, client, log = () => {}) {
       if (req.method !== 'POST' || req.url !== '/send') return fail(404, 'not_found');
       const auth = String(req.headers.authorization || '');
       if (!auth.startsWith('Bearer ') || !safeEqual(auth.slice(7), secret)) return fail(401, 'unauthorized');
+
+      if (!limiter.allow('send_api')) return fail(429, 'rate_limited');
 
       let data;
       try { data = JSON.parse(await readBody(req)); } catch { return fail(400, 'bad_json'); }
@@ -65,11 +76,15 @@ export function createSendApi(cfg, client, log = () => {}) {
       } else {
         if (!channels.has(channelId)) return fail(403, 'channel_not_allowed');
         channel = await client.channels.fetch(channelId);
+        if (channel?.guildId && guilds.size && !guilds.has(channel.guildId)) {
+          return fail(403, 'guild_not_allowed');
+        }
       }
       if (!channel || typeof channel.send !== 'function') return fail(404, 'target_unavailable');
 
-      const content = String(data.content || '').trim();
-      if (!content || content.length > 12000) return fail(400, 'bad_content');
+      const rawContent = String(data.content || '').trim();
+      if (!rawContent || rawContent.length > 12000) return fail(400, 'bad_content');
+      const content = neutralizeMentions(rawContent, mentionAllow);
       const replyTo = data.reply_to ? String(data.reply_to) : null;
       if (replyTo && !/^\d{1,25}$/.test(replyTo)) return fail(400, 'bad_reply_to');
 
@@ -86,6 +101,8 @@ export function createSendApi(cfg, client, log = () => {}) {
     }
   });
 
+  server.requestTimeout = 15_000;
+  server.headersTimeout = 10_000;
   server.on('error', (err) => log('error', 'send api failed to start', { code: err?.code || 'unknown' }));
   server.once('listening', () => log('info', 'send api listening on loopback', { port: server.address()?.port || port }));
   server.listen(port, '127.0.0.1');
