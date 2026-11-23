@@ -37,3 +37,7 @@ Polling: `GET <MAUSBOT_API_BASE>?thread=<threadId>` with the same bearer key. Re
 - Reply text is assembled from the bot's text lines in that thread, joined with blank lines, and redacted by the server.
 - "Acts as me" is a property of the key (`actsAsOwner`), toggled in the app and allowed by the server. A key without it opens a fenced "ask" thread: tools may raise approval cards, which surface as `needs_approval`. The bridge never approves; the owner does that in MausBot.
 - A thread opened as owner work stays owner-only while the key is marked; if the mark is removed, that thread returns 403 and a new thread is needed.
+
+## Detection timing for this bridge
+
+"Acts as me" is detected lazily: the bridge does not probe at startup (the API has no health endpoint that reveals the key's mark). If the mark is missing or disallowed, the first Discord message gets an explicit notice telling the owner to mark the key. The `MAUSBOT_ACTS_AS_ME` setting records intent only; the live mark is what the server enforces.

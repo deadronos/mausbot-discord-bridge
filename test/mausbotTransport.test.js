@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mausbotRequest } from '../src/mausbotTransport.js';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import { mausbotRequest, getSharedThreadStore } from '../src/mausbotTransport.js';
 
 const cfg = {
   mausbot: {
@@ -115,4 +118,34 @@ test('maps an unconfinable AI refusal to cannot_confine', async () => {
   const fetch = stubFetch(403, { error: "This bot's AI can't take Bot API calls. Choose another AI for this bot." });
   const res = await mausbotRequest(cfg, sendReq, harness(fetch));
   assert.deepEqual(res, { error: 'cannot_confine' });
+});
+
+
+test('one shared thread store is reused across requests when none is injected', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mausbot-threads-'));
+  const prev = process.env.MAUSBOT_THREAD_FILE;
+  process.env.MAUSBOT_THREAD_FILE = path.join(tmp, 'threads.json');
+  try {
+    const store = getSharedThreadStore();
+    assert.equal(getSharedThreadStore(), store);
+    store.set('dm-A', 'ta');
+    store.set('chan-C', 'tc');
+    for (const [key, thread] of [['dm-A', 'ta'], ['chan-C', 'tc']]) {
+      const fetch = stubFetch(200, { reply: 'ok', thread });
+      await mausbotRequest(cfg, { ...sendReq, threadKey: key }, { fetch });
+      assert.equal(JSON.parse(fetch.calls[0].opts.body).thread, thread);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.MAUSBOT_THREAD_FILE;
+    else process.env.MAUSBOT_THREAD_FILE = prev;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('wait is clamped below the request timeout', async () => {
+  const shortCfg = { mausbot: { ...cfg.mausbot, timeoutMs: 8000 } };
+  const fetch = stubFetch(200, { reply: 'ok', thread: 't1' });
+  await mausbotRequest(shortCfg, sendReq, harness(fetch));
+  const wait = JSON.parse(fetch.calls[0].opts.body).wait;
+  assert.ok(wait >= 1 && wait < 8, `wait ${wait} must fit inside an 8s timeout`);
 });

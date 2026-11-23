@@ -6,7 +6,19 @@
 import fs from 'node:fs';
 
 const DEFAULT_THREAD_FILE = './threads.json';
-const WAIT_SEC = 45;
+
+/** One store per process, so concurrent DM/channel calls cannot overwrite each other's thread ids. */
+const sharedStores = new Map();
+export function getSharedThreadStore(file = process.env.MAUSBOT_THREAD_FILE || DEFAULT_THREAD_FILE) {
+  if (!sharedStores.has(file)) sharedStores.set(file, createThreadStore(file));
+  return sharedStores.get(file);
+}
+
+/** The server's wait must fit inside our own abort deadline, or we lose the thread id. */
+function waitSeconds(timeoutMs) {
+  const ceiling = Math.floor((timeoutMs || 120_000) / 1000) - 5;
+  return Math.max(1, Math.min(45, ceiling));
+}
 
 export function createThreadStore(file = DEFAULT_THREAD_FILE) {
   let map = new Map();
@@ -33,7 +45,7 @@ export function createThreadStore(file = DEFAULT_THREAD_FILE) {
 
 export async function mausbotRequest(cfg, req, deps = {}) {
   const fetchFn = deps.fetch || fetch;
-  const threads = deps.threads || createThreadStore();
+  const threads = deps.threads || getSharedThreadStore();
   const bot = cfg.mausbot || {};
   const headers = {
     Authorization: `Bearer ${bot.apiKey || ''}`,
@@ -45,7 +57,7 @@ export async function mausbotRequest(cfg, req, deps = {}) {
     url = `${url}?thread=${encodeURIComponent(req.requestId || '')}`;
     opts = { method: 'GET', headers, signal: AbortSignal.timeout(bot.timeoutMs || 120_000) };
   } else {
-    const body = { message: req.text, wait: WAIT_SEC };
+    const body = { message: req.text, wait: waitSeconds(bot.timeoutMs) };
     const known = threads.get(req.threadKey);
     if (known) body.thread = known;
     opts = {
