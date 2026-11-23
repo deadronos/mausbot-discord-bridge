@@ -27,6 +27,7 @@ import { loadConfig } from './config.js';
 import { think } from './brain.js';
 import { splitMessage } from './splitMessage.js';
 import { RateLimiter } from './rateLimit.js';
+import { isAllowedInGuild, formatReplyText } from './handlerPure.js';
 
 const cfg = loadConfig();
 const limiter = new RateLimiter(cfg.rateLimitPerUser, cfg.rateLimitWindowMs);
@@ -144,8 +145,7 @@ client.on(Events.MessageCreate, async (message) => {
         return;
       }
     } else {
-      if (!cfg.guildAllow.has(message.guild.id)) return;
-      if (!cfg.channelAllow.has(message.channel.id)) return;
+      if (!isAllowedInGuild(message, cfg, client.user.id)) return;
     }
 
     // CRITICAL: do NOT drop all bots. Only accept allowlisted authors
@@ -214,9 +214,7 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
 
-    let reply = (result.text || '').trim();
-    if (!reply) reply = '(empty brain response)';
-    if (result.handoff !== false) reply = appendPeerMention(reply, cfg.peerMentionId);
+    const reply = formatReplyText(result, cfg);
 
     await sendSplitReply(message, reply, result.handoff !== false);
   } catch (err) {

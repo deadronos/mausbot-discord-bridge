@@ -1,4 +1,6 @@
 import { thinkGbot } from './gbot.js';
+import { thinkMausbot } from './mausbot.js';
+import { mausbotRequest } from './mausbotTransport.js';
 
 /**
  * Brain backends for the Discord bridge.
@@ -11,6 +13,7 @@ import { thinkGbot } from './gbot.js';
  */
 
 export async function think(cfg, payload) {
+  if (cfg.brainMode === 'mausbot') return thinkMausbot(cfg, payload, { request: mausbotRequest });
   if (cfg.brainMode === 'gbot') return thinkGbot(cfg, payload);
   if (cfg.brainMode === 'log_only') {
     return {
