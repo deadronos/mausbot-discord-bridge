@@ -59,6 +59,13 @@ export function loadConfig() {
   if (typingPulseMs < 1000 || typingPulseMs > 15000) {
     throw new Error('TYPING_PULSE_MS must be between 1000 and 15000');
   }
+  // Optional loopback send API: a separate secret, never the Discord token.
+  // If absent, the bridge simply does not start the endpoint.
+  const sendApiSecret = env('MAUSBOT_SEND_API_SECRET');
+  const sendApiPort = int('SEND_API_PORT', 8812);
+  if (sendApiSecret && (sendApiPort < 1024 || sendApiPort > 65535)) {
+    throw new Error('SEND_API_PORT must be between 1024 and 65535');
+  }
   const webhookAsync = bool('WEBHOOK_ASYNC', false);
   if (!peerMentionId && brainMode !== 'gbot' && brainMode !== 'mausbot' && !(brainMode === 'webhook' && webhookAsync)) {
     throw new Error('DISCORD_PEER_MENTION_ID is required (e.g. Hermes/Maverick bot id)');
@@ -142,6 +149,7 @@ export function loadConfig() {
     mentionAllow: new Set(mentionAllow),
     peerAuthorAllow: new Set(peerAuthorAllow),
     typingPulseMs,
+    sendApi: { secret: sendApiSecret, port: sendApiPort },
     requireBotMention: bool('REQUIRE_BOT_MENTION', true),
     wakeWords: splitCsv('WAKE_WORDS').map((w) => w.toLowerCase()),
     brainMode,
