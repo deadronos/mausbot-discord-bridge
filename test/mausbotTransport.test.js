@@ -46,10 +46,10 @@ test('author identity is forwarded so the brain can apply the trust boundary', a
   const fetch = stubFetch(200, { reply: 'ok', thread: 't1' });
   await mausbotRequest(cfg, {
     ...sendReq,
-    payload: { authorId: '1470132281137041438', authorTag: 'Nova#1234', isBot: true, channelId: '1466587026097836271', isDM: false },
+    payload: { authorId: '400000000000000004', authorTag: 'Nova#1234', isBot: true, channelId: '200000000000000002', isDM: false },
   }, harness(fetch));
   const message = JSON.parse(fetch.calls[0].opts.body).message;
-  assert.match(message, /^\[Discord from Nova#1234 \(id=1470132281137041438, peer bot, channel 1466587026097836271\)\]\n/);
+  assert.match(message, /^\[Discord from Nova#1234 \(id=400000000000000004, peer bot, channel 200000000000000002\)\]\n/);
   assert.match(message, /hello from discord$/);
 });
 
@@ -114,6 +114,12 @@ test('maps 202 working so the adapter keeps polling', async () => {
   assert.equal(res.requestId, 't1');
   assert.equal(res.status, 'working');
   assert.equal(res.reply, undefined);
+});
+
+test('maps 409 to busy', async () => {
+  const fetch = stubFetch(409, { error: 'Thread busy' });
+  const res = await mausbotRequest(cfg, sendReq, harness(fetch));
+  assert.deepEqual(res, { error: 'busy' });
 });
 
 test('maps 401 to unauthorized', async () => {

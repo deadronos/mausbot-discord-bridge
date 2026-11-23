@@ -8,13 +8,17 @@ export function isAllowedInGuild(message, cfg, clientUserId) {
   return cfg.authorAllow.has(message.author.id);
 }
 
+export function neutralizeMentions(text, mentionAllow) {
+  // Peer gateways may inspect literal mention syntax even without Discord notifications.
+  // Keep real pings only for explicitly allowlisted ids; neutralize every other id to plain text.
+  const allow = mentionAllow || new Set();
+  return String(text || '').replace(/<@!?(\d+)>/g, (_whole, id) => (allow.has(id) ? `<@${id}>` : `@user:${id}`));
+}
+
 export function formatReplyText(result, cfg) {
   let text = (result?.text || '').trim() || '(empty brain response)';
   if (result?.handoff === false) {
-    // A MausBot reply may quote a Discord mention. Keep real pings only for the
-    // explicitly allowlisted peer ids; neutralize every other id to plain text.
-    const allow = cfg.mentionAllow || new Set();
-    return text.replace(/<@!?(\d+)>/g, (whole, id) => (allow.has(id) ? `<@${id}>` : `@user:${id}`));
+    return neutralizeMentions(text, cfg.mentionAllow);
   }
   const mention = `<@${cfg.peerMentionId}>`;
   return text.includes(mention) ? text : `${text}\n\n${mention}`;

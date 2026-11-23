@@ -6,6 +6,15 @@
 #   DISCORD_USER=<user id>       DISCORD_TEXT='hello' bash scripts/discord-send.sh
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+env_file="${ENV_FILE:-${script_dir}/../.env}"
+if [ -z "${SEND_API_PORT:-}" ] && [ -f "$env_file" ]; then
+  port_from_env="$(grep -E '^SEND_API_PORT=[0-9]+$' "$env_file" | tail -n 1 | cut -d= -f2 || true)"
+  if [ -n "$port_from_env" ]; then
+    SEND_API_PORT="$port_from_env"
+  fi
+fi
+
 channel="${DISCORD_CHANNEL:-}"
 user="${DISCORD_USER:-}"
 text="${DISCORD_TEXT:-}"
@@ -16,7 +25,7 @@ if [ -z "$text" ] || { [ -z "$channel" ] && [ -z "$user" ]; }; then
   exit 2
 fi
 
-secret="$(security find-generic-password -s 'mausbot-discord-bridge' -a 'MAUSBOT_SEND_API_SECRET' -w 2>/dev/null | tr -d '\n')"
+secret="$(security find-generic-password -s 'mausbot-discord-bridge' -a 'MAUSBOT_SEND_API_SECRET' -w 2>/dev/null | tr -d '\r\n"')"
 if [ -z "$secret" ]; then
   echo "Send API secret is missing from Keychain." >&2
   exit 1
@@ -31,7 +40,8 @@ if os.environ["DISCORD_REPLY_TO"]: data["reply_to"] = os.environ["DISCORD_REPLY_
 print(json.dumps(data))
 ')"
 
-curl -sS --max-time 20 -X POST "http://127.0.0.1:${SEND_API_PORT:-8812}/send" \
-  -H "Authorization: Bearer ${secret}" \
-  -H 'Content-Type: application/json' \
-  --data-binary "$payload"
+# Pass the Authorization header via stdin (-K -) so the secret never appears in process argv.
+printf 'header = "Authorization: Bearer %s"\n' "$secret" | \
+  curl -sS --max-time 20 -K - -X POST "http://127.0.0.1:${SEND_API_PORT:-8812}/send" \
+    -H 'Content-Type: application/json' \
+    --data-binary "$payload"

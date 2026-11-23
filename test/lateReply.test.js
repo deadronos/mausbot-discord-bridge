@@ -63,3 +63,85 @@ test('refuses a missing thread id or a second watcher on the same thread', async
   assert.equal(start('chan-D', 't3'), true);
   assert.equal(start('chan-D', 't3'), false);
 });
+
+test('surfaces needs_approval and invokes onFinish', async () => {
+  let t = 0;
+  let finished = 0;
+  const sent = [];
+  let resolveDone;
+  const done = new Promise((r) => { resolveDone = r; });
+  watchLateReply(cfg, {
+    threadKey: 'chan-E', requestId: 't4', format: (s) => s,
+    send: async (s) => { sent.push(s); },
+    onFinish: () => { finished += 1; resolveDone(); },
+  }, {
+    request: async () => ({ delivery: 'accepted', requestId: 't4', reply: { type: 'approval' } }),
+    sleep: async () => { t += 10; },
+    now: () => t,
+  });
+
+  await done;
+  assert.equal(finished, 1);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Open MausBot to approve/);
+  assert.equal(isWatchingLateReply('chan-E'), false);
+});
+
+test('stops on terminal error instead of polling until timeout', async () => {
+  let t = 0;
+  let calls = 0;
+  const sent = [];
+  let resolveDone;
+  const done = new Promise((r) => { resolveDone = r; });
+  watchLateReply(cfg, {
+    threadKey: 'chan-F', requestId: 't5', format: (s) => s,
+    send: async (s) => { sent.push(s); },
+    onFinish: () => { resolveDone(); },
+  }, {
+    request: async () => { calls += 1; return { error: 'unauthorized' }; },
+    sleep: async () => { t += 10; },
+    now: () => t,
+  });
+
+  await done;
+  assert.equal(calls, 1);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Bot API key/);
+});
+
+test('caps oversized late replies and stops if send fails', async () => {
+  let t = 0;
+  const sent = [];
+  let resolveDone;
+  const done = new Promise((r) => { resolveDone = r; });
+  watchLateReply(cfg, {
+    threadKey: 'chan-G', requestId: 't6', format: (s) => s,
+    send: async (s) => { sent.push(s); },
+    onFinish: () => { resolveDone(); },
+  }, {
+    request: async () => ({ delivery: 'accepted', requestId: 't6', reply: { type: 'text', content: 'x'.repeat(13000) } }),
+    sleep: async () => { t += 10; },
+    now: () => t,
+  });
+
+  await done;
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Long reply shortened/);
+  assert.ok(sent[0].length < 12200);
+
+  let sendAttempts = 0;
+  let resolveFailDone;
+  const failDone = new Promise((r) => { resolveFailDone = r; });
+  watchLateReply(cfg, {
+    threadKey: 'chan-H', requestId: 't7', format: (s) => s,
+    send: async () => { sendAttempts += 1; throw new Error('deleted'); },
+    onFinish: () => { resolveFailDone(); },
+  }, {
+    request: async () => ({ delivery: 'accepted', requestId: 't7', reply: { type: 'text', content: 'hi' } }),
+    sleep: async () => { t += 10; },
+    now: () => t,
+  });
+
+  await failDone;
+  assert.equal(sendAttempts, 1);
+});
