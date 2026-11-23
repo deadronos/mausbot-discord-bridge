@@ -9,6 +9,7 @@ export function runGbot(binary, args, timeoutMs) {
   delete env.DISCORD_BOT_TOKEN;
   delete env.OPENAI_API_KEY;
   delete env.WEBHOOK_AUTH_HEADER;
+  delete env.MAUSBOT_API_KEY;
   return new Promise((resolve, reject) => {
     execFile(binary, args, {
       env, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024,

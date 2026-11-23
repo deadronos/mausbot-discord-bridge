@@ -9,9 +9,9 @@ In the Discord Developer Portal, for the bot whose token you already have:
 - **Message Content Intent = ON** (required to read @mentions in servers).
 - Invite scopes: `bot` + `applications.commands`.
 - Permissions: View Channels, Send Messages, Read Message History (Embed Links and Add Reactions optional).
-- Invite the bot to guild `1421572009024028895`, channel `1452349461811691581`.
+- Invite the bot to guild `1421572009024028895`, channel `1466587026097836271` (`#openclawbot`).
 
-The allowlists are already filled in `.env`: only user `278962007577722880` (you) can trigger the bot, in DMs or in that channel.
+The allowlists are already filled in `.env`: the author allowlist contains you (`278962007577722880`) plus the two peer bots — Clawson / OpenClaw (`1466579180970971188`) and Nova / Hermes (`1470132281137041438`). Only those three can trigger the bridge, in DMs or in that channel. A message must @mention the bot to wake it; ordinary posts are ignored so bots cannot loop. There is **no bridge-side ping budget** — loop control is behavioural in MausBot (Lance): if a peer is only bouncing mentions, it replies without repeating the mention. `DISCORD_MENTION_ALLOWLIST` only decides which raw `<@id>` tokens may become real pings.
 
 ## 2. MausBot Bot API
 
@@ -52,7 +52,9 @@ If you upgrade Node, update the `PATH` in the plist to include the new node `bin
 4. `@YourBot hello` in the allowed channel → a reply comes back there.
 5. A message from another account, or in another channel, gets no reply.
 6. A long reply arrives split into several messages.
-7. `bridge.err.log` contains no token or key.
+7. A long-running turn keeps the "is typing…" indicator alive (refreshed every `TYPING_PULSE_MS`, default 5 s). When it stops with a plain reply the turn finished.
+8. If a turn outlasts the foreground wait window, the bridge posts "Still working — I'll post the result here when it arrives." and keeps polling that thread in the background for up to `MAUSBOT_LATE_REPLY_MS` (default 15 min). The real reply is posted back to the same channel when it arrives; there is no need to check MausBot manually.
+9. `bridge.err.log` contains no token or key.
 
 ## 6. Stop, restart, logs
 

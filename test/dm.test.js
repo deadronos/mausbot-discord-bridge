@@ -9,4 +9,9 @@ test('isAllowedDm accepts only 1:1 DMs with allowlisted humans', () => {
   assert.equal(isAllowedDm({ type: 0, recipients: [{ id: '278962007577722880' }] }, allow), false);
   assert.equal(isAllowedDm({ type: 3, recipients: [{ id: '278962007577722880' }, { id: '1' }] }, allow), false);
   assert.equal(isAllowedDm(null, allow), false);
+  // discord.js v14 exposes recipients as a Collection (Map), not an Array.
+  const collection = new Map([['278962007577722880', { id: '278962007577722880', bot: false }]]);
+  assert.equal(isAllowedDm({ type: 1, recipients: collection }, allow), true);
+  const group = new Map([['278962007577722880', { id: '278962007577722880' }], ['2', { id: '2' }]]);
+  assert.equal(isAllowedDm({ type: 1, recipients: group }, allow), false);
 });

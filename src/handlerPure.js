@@ -11,8 +11,10 @@ export function isAllowedInGuild(message, cfg, clientUserId) {
 export function formatReplyText(result, cfg) {
   let text = (result?.text || '').trim() || '(empty brain response)';
   if (result?.handoff === false) {
-    // A MausBot reply may quote a Discord mention; never turn it into a real ping.
-    return text.replace(/<@!?(\d+)>/g, '@user:$1');
+    // A MausBot reply may quote a Discord mention. Keep real pings only for the
+    // explicitly allowlisted peer ids; neutralize every other id to plain text.
+    const allow = cfg.mentionAllow || new Set();
+    return text.replace(/<@!?(\d+)>/g, (whole, id) => (allow.has(id) ? `<@${id}>` : `@user:${id}`));
   }
   const mention = `<@${cfg.peerMentionId}>`;
   return text.includes(mention) ? text : `${text}\n\n${mention}`;

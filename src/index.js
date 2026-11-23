@@ -28,6 +28,9 @@ import { think } from './brain.js';
 import { splitMessage } from './splitMessage.js';
 import { RateLimiter } from './rateLimit.js';
 import { isAllowedInGuild, formatReplyText } from './handlerPure.js';
+import { isAllowedDm } from './dm.js';
+import { startTypingPulse } from './typing.js';
+import { watchLateReply } from './lateReply.js';
 
 const cfg = loadConfig();
 const limiter = new RateLimiter(cfg.rateLimitPerUser, cfg.rateLimitWindowMs);
@@ -75,20 +78,19 @@ function stripBotMention(content, botId) {
     .trim();
 }
 
-function appendPeerMention(text, peerId) {
-  const mention = `<@${peerId}>`;
-  if (text.includes(mention)) return text;
-  return `${text.trim()}\n\n${mention}`;
-}
-
 async function sendSplitReply(message, fullText, handoff = true) {
   // Peer gateways may inspect literal mention syntax even without Discord notifications.
-  if (!handoff) fullText = fullText.replace(/<@!?(\d+)>/g, '@user:$1');
+  // Keep allowlisted pings intact; neutralize every other raw user mention.
+  const allow = cfg.mentionAllow || new Set();
+  if (!handoff) {
+    fullText = fullText.replace(/<@!?(\d+)>/g, (whole, id) => (allow.has(id) ? `<@${id}>` : `@user:${id}`));
+  }
   const chunks = splitMessage(fullText, 1900);
+  const users = handoff ? [cfg.peerMentionId].filter(Boolean) : [...allow];
   const opts = {
     allowedMentions: {
       parse: [],
-      users: handoff ? [cfg.peerMentionId] : [],
+      users,
       repliedUser: false,
     },
   };
@@ -116,6 +118,7 @@ client.once(Events.ClientReady, (c) => {
     channels: [...cfg.channelAllow],
     dmAuthors: [...(cfg.dmAllow || [])],
     authors: [...cfg.authorAllow],
+    peerAuthors: [...(cfg.peerAuthorAllow || [])],
     requireBotMention: cfg.requireBotMention,
     brainMode: cfg.brainMode,
   });
@@ -142,6 +145,12 @@ client.on(Events.MessageCreate, async (message) => {
       if (message.author.bot) return;
       if (!cfg.dmAllow.has(message.author.id) || !cfg.authorAllow.has(message.author.id)) {
         log('debug', 'drop non-allowlisted DM', { author: message.author.id });
+        return;
+      }
+      // A group DM also has no guild. Without this check, private replies could
+      // leak to anyone else in the group as long as one author was allowlisted.
+      if (!isAllowedDm(message.channel, cfg.dmAllow)) {
+        log('debug', 'drop non-1:1 DM channel', { author: message.author.id, channelType: message.channel?.type });
         return;
       }
     } else {
@@ -196,17 +205,24 @@ client.on(Events.MessageCreate, async (message) => {
     });
 
     await message.channel.sendTyping().catch(() => {});
-
-    const result = await think(cfg, {
-      text,
-      authorId: message.author.id,
-      authorTag: message.author.tag,
-      isBot: Boolean(message.author.bot),
-      channelId: message.channel.id,
-      guildId: isDM ? null : message.guild.id,
-      isDM,
-      messageId: message.id,
-    });
+    // Discord's typing state expires in a few seconds. Keep refreshing it while
+    // the brain runs so a long turn is visibly "still working", not a timeout.
+    const stopTyping = startTypingPulse(message.channel, cfg.typingPulseMs);
+    let result;
+    try {
+      result = await think(cfg, {
+        text,
+        authorId: message.author.id,
+        authorTag: message.author.tag,
+        isBot: Boolean(message.author.bot),
+        channelId: message.channel.id,
+        guildId: isDM ? null : message.guild.id,
+        isDM,
+        messageId: message.id,
+      });
+    } finally {
+      stopTyping();
+    }
 
     if (result.silent) {
       // Async webhook brain: acknowledge with a reaction; the agent replies later.
@@ -217,6 +233,16 @@ client.on(Events.MessageCreate, async (message) => {
     const reply = formatReplyText(result, cfg);
 
     await sendSplitReply(message, reply, result.handoff !== false);
+
+    if (result.pending) {
+      watchLateReply(cfg, {
+        threadKey: result.threadKey,
+        requestId: result.requestId,
+        format: (content) => formatReplyText({ text: content, handoff: false }, cfg),
+        send: (text) => sendSplitReply(message, text, false),
+        log,
+      });
+    }
   } catch (err) {
     log('error', 'handler failed', { messageId: message.id, type: err?.name || 'Error' });
     try {

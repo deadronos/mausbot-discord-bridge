@@ -38,12 +38,28 @@ test('mausbot mode requires DISCORD_OWNER_ID',()=>{
   const o={...mausbot};delete o.DISCORD_OWNER_ID;
   assert.throws(()=>config(o),/DISCORD_OWNER_ID/);
 });
-test('mausbot mode requires exactly the owner in the author allowlist',()=>{
-  assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'owner-1,other'}),/DISCORD_AUTHOR_ALLOWLIST/);
+test('mausbot mode requires the owner and rejects unlisted authors',()=>{
   assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'other'}),/DISCORD_AUTHOR_ALLOWLIST/);
+  assert.throws(()=>config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'owner-1,stranger',DISCORD_PEER_AUTHOR_ALLOWLIST:'peer-1'}),/DISCORD_AUTHOR_ALLOWLIST/);
+});
+test('mausbot mode accepts explicitly named peer authors',()=>{
+  const c=config({...mausbot,DISCORD_AUTHOR_ALLOWLIST:'owner-1,peer-1,peer-2',DISCORD_PEER_AUTHOR_ALLOWLIST:'peer-1,peer-2'});
+  assert.deepEqual([...c.authorAllow].sort(),['owner-1','peer-1','peer-2']);
+  assert.deepEqual([...c.peerAuthorAllow].sort(),['peer-1','peer-2']);
 });
 test('mausbot mode does not require DISCORD_PEER_MENTION_ID',()=>{
   assert.equal(config(mausbot).brainMode,'mausbot');
+});
+test('typing pulse interval is bounded',()=>{
+  assert.equal(config(mausbot).typingPulseMs,5000);
+  assert.equal(config({...mausbot,TYPING_PULSE_MS:'4000'}).typingPulseMs,4000);
+  assert.throws(()=>config({...mausbot,TYPING_PULSE_MS:'200'}),/TYPING_PULSE_MS/);
+  assert.throws(()=>config({...mausbot,TYPING_PULSE_MS:'60000'}),/TYPING_PULSE_MS/);
+});
+test('late reply window is bounded',()=>{
+  assert.equal(config(mausbot).mausbot.lateReplyTimeoutMs,900000);
+  assert.equal(config({...mausbot,MAUSBOT_LATE_REPLY_MS:'60000'}).mausbot.lateReplyTimeoutMs,60000);
+  assert.throws(()=>config({...mausbot,MAUSBOT_LATE_REPLY_MS:'1000'}),/MAUSBOT_LATE_REPLY_MS/);
 });
 test('mausbot mode supports a DM allowlist',()=>{
   assert.equal(config({...mausbot,DISCORD_DM_ALLOWLIST:'owner-1'}).dmAllow.has('owner-1'),true);

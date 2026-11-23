@@ -1,6 +1,16 @@
-/** A DM channel is allowed only if it is type 1 (DM) and every recipient is a non-bot on the DM allowlist. */
+/** A DM channel is allowed only if it is type 1 (DM) and its single recipient is a non-bot on the allowlist. */
+
+function recipientsOf(raw) {
+  if (Array.isArray(raw)) return raw;
+  // discord.js v14 exposes recipients as a Collection (a Map subclass), not an Array.
+  if (raw && typeof raw.values === 'function') return [...raw.values()];
+  return [];
+}
+
 export function isAllowedDm(channel, dmAllow) {
   if (!channel || channel.type !== 1) return false;
-  const r = Array.isArray(channel.recipients) ? channel.recipients : [];
-  return r.length === 1 && !r[0].bot && dmAllow.has(String(r[0].id));
+  const r = recipientsOf(channel.recipients);
+  if (r.length !== 1) return false;
+  const recipient = r[0];
+  return Boolean(recipient && !recipient.bot && dmAllow.has(String(recipient.id)));
 }
